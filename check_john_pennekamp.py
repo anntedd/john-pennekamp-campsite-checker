@@ -9,13 +9,14 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+import random
 
 # ==============================
-# Load environment variables
+# Environment variables (GitHub Secrets)
 # ==============================
-EMAIL_FROM = os.getenv("EMAIL_FROM")
-EMAIL_TO = os.getenv("EMAIL_TO")
-EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
+EMAIL_FROM = os.environ["EMAIL_FROM"]
+EMAIL_TO = os.environ["EMAIL_TO"]
+EMAIL_PASSWORD = os.environ["EMAIL_PASSWORD"]
 
 # ==============================
 # Email function
@@ -29,6 +30,7 @@ def send_email(subject, body):
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
         server.login(EMAIL_FROM, EMAIL_PASSWORD)
         server.sendmail(EMAIL_FROM, EMAIL_TO, msg.as_string())
+    print(f"Email sent: {subject}")
 
 # ==============================
 # Logging function
@@ -41,6 +43,15 @@ def log_result(message):
     print(message)
 
 # ==============================
+# Random-minute logic (sleep until random minute in current hour)
+# ==============================
+current_minute = datetime.utcnow().minute
+target_minute = random.randint(0, 59)
+sleep_seconds = ((target_minute - current_minute) % 60) * 60
+print(f"Sleeping {sleep_seconds//60} minutes ({sleep_seconds} seconds) until random minute {target_minute}")
+time.sleep(sleep_seconds)
+
+# ==============================
 # Selenium setup
 # ==============================
 chrome_options = Options()
@@ -49,7 +60,7 @@ chrome_options.add_argument("--no-sandbox")
 chrome_options.add_argument("--disable-dev-shm-usage")
 
 driver = webdriver.Chrome(options=chrome_options)
-wait = WebDriverWait(driver, 15)
+wait = WebDriverWait(driver, 30)  # increase wait time
 
 try:
     # ==============================
@@ -58,10 +69,13 @@ try:
     driver.get("https://www.floridastateparks.org/stay-night")
 
     # Click "Book your overnight stay today!" button
-    book_button = wait.until(EC.element_to_be_clickable((By.XPATH, "//a[contains(text(),'Book your overnight stay today')]")))
+    book_button = wait.until(
+        EC.element_to_be_clickable((By.CSS_SELECTOR, "a[href*='/stay-night']"))
+    )
     book_button.click()
+    time.sleep(5)  # wait for next page to load
 
-    # Wait for new page to load (park search)
+    # Wait for park search input
     wait.until(EC.presence_of_element_located((By.ID, "home-search-location-input")))
 
     # ==============================
@@ -73,19 +87,20 @@ try:
     park_input.send_keys("\n")
 
     # ==============================
-    # Select arrival date
+    # Select arrival date and nights
     # ==============================
     arrival_input = driver.find_element(By.ID, "arrivaldate")
     arrival_input.clear()
     arrival_input.send_keys("04/04/2026")
 
-    # Nights = 1
     nights_input = driver.find_element(By.ID, "nights")
     nights_input.clear()
     nights_input.send_keys("1")
 
     # Click "Show Results"
-    show_button = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(),'Show Results')]")))
+    show_button = wait.until(
+        EC.element_to_be_clickable((By.XPATH, "//button[contains(text(),'Show Results')]"))
+    )
     show_button.click()
 
     # ==============================
