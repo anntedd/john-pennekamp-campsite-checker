@@ -1,26 +1,26 @@
 import os
-import time
-import re
 import smtplib
 from email.mime.text import MIMEText
-from datetime import datetime
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
+from playwright.sync_api import sync_playwright
 import random
+import time
+from datetime import datetime
 
-# ==============================
-# Environment variables (GitHub Secrets)
-# ==============================
+# ===========================
+# Random sleep for hourly randomness
+# ===========================
+# Sleep 0–59 minutes at the start
+sleep_seconds = random.randint(0, 59 * 60)
+print(f"Sleeping {sleep_seconds // 60} minutes and {sleep_seconds % 60} seconds before checking...")
+time.sleep(sleep_seconds)
+
+# ===========================
+# Email setup
+# ===========================
 EMAIL_FROM = os.environ["EMAIL_FROM"]
 EMAIL_TO = os.environ["EMAIL_TO"]
 EMAIL_PASSWORD = os.environ["EMAIL_PASSWORD"]
 
-# ==============================
-# Email function
-# ==============================
 def send_email(subject, body):
     msg = MIMEText(body)
     msg["Subject"] = subject
@@ -29,102 +29,63 @@ def send_email(subject, body):
 
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
         server.login(EMAIL_FROM, EMAIL_PASSWORD)
-        server.sendmail(EMAIL_FROM, EMAIL_TO, msg.as_string())
-    print(f"Email sent: {subject}")
+        server.send_message(msg)
+    print("Email sent successfully!")
 
-# ==============================
-# Logging function
-# ==============================
-def log_result(message):
-    os.makedirs("logs", exist_ok=True)
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    with open(f"logs/log_{timestamp}.txt", "w") as f:
-        f.write(message)
-    print(message)
-
-# ==============================
-# Random-minute logic (sleep until random minute in current hour)
-# ==============================
-current_minute = datetime.utcnow().minute
-target_minute = random.randint(0, 59)
-sleep_seconds = ((target_minute - current_minute) % 60) * 60
-print(f"Sleeping {sleep_seconds//60} minutes ({sleep_seconds} seconds) until random minute {target_minute}")
-time.sleep(sleep_seconds)
-
-# ==============================
-# Selenium setup
-# ==============================
-chrome_options = Options()
-chrome_options.add_argument("--headless")  # run without opening a browser window
-chrome_options.add_argument("--no-sandbox")
-chrome_options.add_argument("--disable-dev-shm-usage")
-
-driver = webdriver.Chrome(options=chrome_options)
-wait = WebDriverWait(driver, 30)  # increase wait time
+# ===========================
+# John Pennekamp availability check
+# ===========================
+TARGET_DATE = "04/04/2026"
+URL = "https://www.floridastateparks.org/stay-night"
 
 try:
-    # ==============================
-    # Open reservation page
-    # ==============================
-    driver.get("https://www.floridastateparks.org/stay-night")
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.goto(URL)
 
-    # Click "Book your overnight stay today!" button
-    book_button = wait.until(
-        EC.element_to_be_clickable((By.CSS_SELECTOR, "a[href*='/stay-night']"))
+        # Click "Book your overnight stay today!"
+        page.click("a:has-text('Book your overnight stay today!')")
+
+        # Wait for search input to appear
+        page.wait_for_selector("#home-search-location-input")
+
+        # Enter park name and press Enter
+        page.fill("#home-search-location-input", "John Pennekamp Coral Reef State Park")
+        time.sleep(1)
+        page.keyboard.press("Enter")
+
+        # Set arrival date
+        page.fill("#arrivaldate", TARGET_DATE)
+
+        # Nights = 1
+        page.fill("#nights", "1")
+
+        # Click "Show Results"
+        page.click("button:has-text('Show Results')")
+
+        # Wait for results page to load
+        page.wait_for_selector(f"a[aria-label*='John Pennekamp Coral Reef State Park']")
+
+        park_card = page.query_selector(f"a[aria-label*='John Pennekamp Coral Reef State Park']")
+        label = park_card.get_attribute("aria-label")
+
+        import re
+        match = re.search(r'(\d+)\s+sites', label)
+        available_sites = int(match.group(1)) if match else 0
+
+        if available_sites > 0:
+            subject = f"🚨 John Pennekamp Available: {available_sites} sites!"
+            body = f"Availability detected!\n\n{available_sites} sites available at John Pennekamp Coral Reef State Park for April 4-5, 2026.\n\nChecked at {datetime.now()}"
+            send_email(subject, body)
+        else:
+            print(f"No availability (0 sites) as of {datetime.now()}")
+
+        browser.close()
+
+except Exception as e:
+    send_email(
+        "John Pennekamp Script Error",
+        f"Something went wrong:\n{e}"
     )
-    book_button.click()
-    time.sleep(5)  # wait for next page to load
-
-    # Wait for park search input
-    wait.until(EC.presence_of_element_located((By.ID, "home-search-location-input")))
-
-    # ==============================
-    # Enter park name
-    # ==============================
-    park_input = driver.find_element(By.ID, "home-search-location-input")
-    park_input.send_keys("John Pennekamp Coral Reef State Park")
-    time.sleep(2)  # wait for autocomplete
-    park_input.send_keys("\n")
-
-    # ==============================
-    # Select arrival date and nights
-    # ==============================
-    arrival_input = driver.find_element(By.ID, "arrivaldate")
-    arrival_input.clear()
-    arrival_input.send_keys("04/04/2026")
-
-    nights_input = driver.find_element(By.ID, "nights")
-    nights_input.clear()
-    nights_input.send_keys("1")
-
-    # Click "Show Results"
-    show_button = wait.until(
-        EC.element_to_be_clickable((By.XPATH, "//button[contains(text(),'Show Results')]"))
-    )
-    show_button.click()
-
-    # ==============================
-    # Wait for results page
-    # ==============================
-    park_card = wait.until(
-        EC.presence_of_element_located((By.XPATH, "//a[contains(@aria-label,'John Pennekamp Coral Reef State Park')]"))
-    )
-
-    label = park_card.get_attribute("aria-label")
-    match = re.search(r'(\d+)\s+sites', label)
-    available_sites = int(match.group(1)) if match else 0
-
-    # ==============================
-    # Send email and log
-    # ==============================
-    if available_sites > 0:
-        subject = f"🚨 John Pennekamp Available: {available_sites} sites!"
-        body = f"Availability detected!\n\n{available_sites} sites available at John Pennekamp Coral Reef State Park for April 4-5, 2026.\n\nChecked at {datetime.now()}"
-        send_email(subject, body)
-        log_result(body)
-    else:
-        # optional: heartbeat email (or just log)
-        log_result(f"No availability (0 sites) as of {datetime.now()}")
-
-finally:
-    driver.quit()
+    raise
