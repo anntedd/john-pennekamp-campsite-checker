@@ -1,7 +1,7 @@
 import os
 import smtplib
+import requests
 from email.mime.text import MIMEText
-from playwright.sync_api import sync_playwright
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import re
@@ -28,56 +28,37 @@ def send_email(subject, body):
 # John Pennekamp availability check
 # ===========================
 TARGET_DATE = "04/04/2026"
-URL = "https://www.floridastateparks.org/stay-night"
+SEARCH_URL = (
+    "https://www.floridastateparks.org/stay-night?park=John+Pennekamp+Coral+Reef+State+Park"
+)
+
+HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/143.0.0.0 Safari/537.36"
+    ),
+    "Accept-Language": "en-US,en;q=0.9",
+}
 
 try:
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
+    response = requests.get(SEARCH_URL, headers=HEADERS, timeout=30)
+    response.raise_for_status()
+    html = response.text
 
-        # Go to page and wait for all network requests
-        page.goto(URL, wait_until="networkidle")
+    # Look for number of sites using regex
+    match = re.search(r'(\d+)\s+sites\s+available', html, re.IGNORECASE)
+    available_sites = int(match.group(1)) if match else 0
 
-        # Click the image link
-        link_locator = page.locator("a:has(img[alt='Book Your Overnight Stay Today'])")
-        link_locator.wait_for(state="visible", timeout=60000)  # Wait up to 60s
-        link_locator.click()
-        page.wait_for_timeout(2000)  # Extra 2s to allow JS to render the form
+    # CST timestamp
+    now_cst = datetime.now(ZoneInfo("America/Chicago")).strftime("%Y-%m-%d %I:%M:%S %p CST")
 
-        # Wait for search input to appear
-        page.wait_for_selector("#home-search-location-input", timeout=60000)
-
-        # Enter park name and press Enter
-        page.fill("#home-search-location-input", "John Pennekamp Coral Reef State Park")
-        page.keyboard.press("Enter")
-
-        # Set arrival date and nights
-        page.fill("#arrivaldate", TARGET_DATE)
-        page.fill("#nights", "1")
-
-        # Click "Show Results" button
-        page.click("button:has-text('Show Results')")
-
-        # Wait for results page to load
-        page.wait_for_selector(f"a[aria-label*='John Pennekamp Coral Reef State Park']", timeout=60000)
-
-        # Check availability
-        park_card = page.query_selector(f"a[aria-label*='John Pennekamp Coral Reef State Park']")
-        label = park_card.get_attribute("aria-label") if park_card else None
-        match = re.search(r'(\d+)\s+sites', label) if label else None
-        available_sites = int(match.group(1)) if match else 0
-
-        # CST timestamp
-        now_cst = datetime.now(ZoneInfo("America/Chicago")).strftime("%Y-%m-%d %I:%M:%S %p CST")
-
-        if available_sites > 0:
-            subject = f"🚨 John Pennekamp Available: {available_sites} sites!"
-            body = f"Availability detected!\n\n{available_sites} sites available at John Pennekamp Coral Reef State Park for April 4-5, 2026.\n\nChecked at {now_cst}"
-            send_email(subject, body)
-        else:
-            print(f"No availability (0 sites) as of {now_cst}")
-
-        browser.close()
+    if available_sites > 0:
+        subject = f"🚨 John Pennekamp Available: {available_sites} sites!"
+        body = f"Availability detected!\n\n{available_sites} sites available at John Pennekamp Coral Reef State Park for April 4-5, 2026.\n\nChecked at {now_cst}"
+        send_email(subject, body)
+    else:
+        print(f"No availability (0 sites) as of {now_cst}")
 
 except Exception as e:
     now_cst = datetime.now(ZoneInfo("America/Chicago")).strftime("%Y-%m-%d %I:%M:%S %p CST")
