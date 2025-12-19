@@ -22,7 +22,7 @@ def send_email(subject, body):
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
         server.login(EMAIL_FROM, EMAIL_PASSWORD)
         server.send_message(msg)
-    print("Email sent successfully!")
+    print(f"Email sent successfully: {subject}")
 
 # ===========================
 # John Pennekamp availability check
@@ -34,39 +34,36 @@ try:
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
-        page.goto(URL)
 
-        # Click "Book your overnight stay today"
-        
-       # Wait for the link containing the image with the alt text
-        page.locator("a:has(img[alt='Book Your Overnight Stay Today'])").wait_for(state="visible", timeout=60000)
-        
-        # Click the link
-        page.locator("a:has(img[alt='Book Your Overnight Stay Today'])").click()
+        # Go to page and wait for all network requests
+        page.goto(URL, wait_until="networkidle")
 
+        # Click the image link
+        link_locator = page.locator("a:has(img[alt='Book Your Overnight Stay Today'])")
+        link_locator.wait_for(state="visible", timeout=60000)  # Wait up to 60s
+        link_locator.click()
+        page.wait_for_timeout(2000)  # Extra 2s to allow JS to render the form
 
         # Wait for search input to appear
-        page.wait_for_selector("#home-search-location-input", timeout=15000)
+        page.wait_for_selector("#home-search-location-input", timeout=60000)
 
         # Enter park name and press Enter
         page.fill("#home-search-location-input", "John Pennekamp Coral Reef State Park")
         page.keyboard.press("Enter")
 
-        # Set arrival date
+        # Set arrival date and nights
         page.fill("#arrivaldate", TARGET_DATE)
-
-        # Nights = 1
         page.fill("#nights", "1")
 
-        # Click "Show Results"
+        # Click "Show Results" button
         page.click("button:has-text('Show Results')")
 
         # Wait for results page to load
-        page.wait_for_selector(f"a[aria-label*='John Pennekamp Coral Reef State Park']", timeout=15000)
+        page.wait_for_selector(f"a[aria-label*='John Pennekamp Coral Reef State Park']", timeout=60000)
 
+        # Check availability
         park_card = page.query_selector(f"a[aria-label*='John Pennekamp Coral Reef State Park']")
         label = park_card.get_attribute("aria-label") if park_card else None
-
         match = re.search(r'(\d+)\s+sites', label) if label else None
         available_sites = int(match.group(1)) if match else 0
 
