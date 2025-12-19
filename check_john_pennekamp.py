@@ -38,7 +38,12 @@ try:
 
         # Click "Book your overnight stay today"
         
-        page.click("a:has-text('Book Your Overnight Stay Today')")
+       # Wait for the link containing the image with the alt text
+        page.locator("a:has(img[alt='Book Your Overnight Stay Today'])").wait_for(state="visible", timeout=60000)
+        
+        # Click the link
+        page.locator("a:has(img[alt='Book Your Overnight Stay Today'])").click()
+
 
         # Wait for search input to appear
         page.wait_for_selector("#home-search-location-input", timeout=15000)
