@@ -37,7 +37,8 @@ try:
         page.goto(URL)
 
         # Click "Book your overnight stay today"
-        page.click("a:has-text('Book your overnight stay today')")
+        
+        page.click("a:has-text('Book Your Overnight Stay Today')")
 
         # Wait for search input to appear
         page.wait_for_selector("#home-search-location-input", timeout=15000)
