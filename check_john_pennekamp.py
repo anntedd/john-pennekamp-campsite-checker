@@ -44,7 +44,7 @@ try:
         page = browser.new_page()
         page.goto(URL)
 
-        # Click "Book your overnight stay today!"
+        # Click "Book your overnight stay today"
         page.click("a:has-text('Book your overnight stay today!')")
 
         # Wait for search input to appear
